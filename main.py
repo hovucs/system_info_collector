@@ -41,7 +41,7 @@ def tool_check():
             stderr=stderr_target,
         )
 
-def kb_to_gb_tb(value):
+def kb_to_gb_tb_convertor(value):
         try:
             kb = int(str(value).split()[0])
             gb = kb / (1024 * 1024)
@@ -83,8 +83,6 @@ if __name__ == "__main__":
     
     if args.os_pwd:
         os_checker.os_password = args.os_pwd
-
-
     
     try:
         with os_checker.ssh_connection(
@@ -100,7 +98,10 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"Failed to collect OS info: {exc}")
         raise SystemExit(1)
+
     print("SYSTEM: "+ args.bmc_host.upper())
+
+
     print("=============================")
     print("|     GENERAL INFORMATION     |")
     print("=============================")
@@ -115,6 +116,7 @@ if __name__ == "__main__":
     print("CMDLINE: "+ info["cmdline"])
     print("IP ADDRESS: "+ info["ip"])
     print("BIOS: "+ info["BIOS"])
+
 
     print("\n=============================")
     print("|       CPU INFORMATION      |")
@@ -156,14 +158,15 @@ if __name__ == "__main__":
         for key in other_keys:
             print(f" - {key}: {cpu[key]}")
 
+
     print("\n=============================")
     print("|      MEMORY INFORMATION    |")
     print("=============================")
     
 
-    total_gb = kb_to_gb_tb(memory["Total"])
-    avail_gb = kb_to_gb_tb(memory["Available"])
-    used_gb = kb_to_gb_tb(memory["Used"])
+    total_gb = kb_to_gb_tb_convertor(memory["Total"])
+    avail_gb = kb_to_gb_tb_convertor(memory["Available"])
+    used_gb = kb_to_gb_tb_convertor(memory["Used"])
 
     print("TOTAL: "+ memory["Total"] + (f" ({total_gb})" if total_gb else ""))
     print("AVAILABLE: "+ memory["Available"] + (f" ({avail_gb})" if avail_gb else ""))
@@ -255,7 +258,6 @@ if __name__ == "__main__":
                         locator_text = locator or "Unknown"
                         print(f"   - {serial_text} @ {locator_text}")
 
-    
 
     print("\n=============================")
     print("|       DISK INFORMATION     |")
@@ -264,11 +266,11 @@ if __name__ == "__main__":
     used_disk = disk.get("Used", "")
     free_disk = disk.get("Free", "")
     if total_disk:
-        print("TOTAL: " + total_disk + (f" ({kb_to_gb_tb(total_disk)})" if kb_to_gb_tb(total_disk) else ""))
+        print("TOTAL: " + total_disk + (f" ({kb_to_gb_tb_convertor(total_disk)})" if kb_to_gb_tb_convertor(total_disk) else ""))
     if used_disk:
-        print("USED: " + used_disk + (f" ({kb_to_gb_tb(used_disk)})" if kb_to_gb_tb(used_disk) else ""))
+        print("USED: " + used_disk + (f" ({kb_to_gb_tb_convertor(used_disk)})" if kb_to_gb_tb_convertor(used_disk) else ""))
     if free_disk:
-        print("FREE: " + free_disk + (f" ({kb_to_gb_tb(free_disk)})" if kb_to_gb_tb(free_disk) else ""))
+        print("FREE: " + free_disk + (f" ({kb_to_gb_tb_convertor(free_disk)})" if kb_to_gb_tb_convertor(free_disk) else ""))
     devices = disk.get("Devices", [])
     if devices:
         print("\nDEVICES:")
@@ -298,8 +300,8 @@ if __name__ == "__main__":
             
             if model:
                 print(f"  Model: {model}")
-            used_text = kb_to_gb_tb(used)
-            avail_text = kb_to_gb_tb(available)
+            used_text = kb_to_gb_tb_convertor(used)
+            avail_text = kb_to_gb_tb_convertor(available)
             if serial:
                 print(f"  Serial: {serial}")
             if size_text:
@@ -308,6 +310,7 @@ if __name__ == "__main__":
                 print(f"  Used: {used_text}")
             if avail_text:
                 print(f"  Available: {avail_text}")
+
 
     print("\n=============================")
     print("|       PCI DEVICES          |")

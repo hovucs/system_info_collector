@@ -28,7 +28,7 @@ class OSChecker:
     ):
         """Yield an active SSH connection and always close it."""
         if paramiko is None:
-            raise ImportError("paramiko is required for SSH connections")
+            raise ImportError("paramiko lib is required for SSH connections")
 
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -107,8 +107,7 @@ class OSChecker:
     def get_cpu(self, conn=None):
         """Return a dictionary with CPU information."""
         if not self.os_hostname:
-            raise ValueError("os_hostname is required to fetch CPU info")
-
+            raise ValueError("OS hostname is required to fetch CPU info")
         def _read_channel(channel):
             try:
                 data = channel.read()
@@ -197,7 +196,7 @@ class OSChecker:
     def get_memory(self, conn=None):
         """Return a dictionary with memory information."""
         if not self.os_hostname:
-            raise ValueError("os_hostname is required to fetch memory info")
+            raise ValueError("OS hostname is required to fetch memory info")
 
         def _read_channel(channel):
             try:
@@ -284,7 +283,7 @@ class OSChecker:
     def get_disk(self, conn=None):
         """Return a dictionary with disk information."""
         if not self.os_hostname:
-            raise ValueError("os_hostname is required to fetch disk info")
+            raise ValueError("OS hostname is required to fetch disk info")
 
         def _read_channel(channel):
             try:
@@ -401,7 +400,7 @@ class OSChecker:
     def get_pci(self, conn=None):
         """Return a list with PCI device information."""
         if not self.os_hostname:
-            raise ValueError("os_hostname is required to fetch PCI info")
+            raise ValueError("OS hostname is required to fetch PCI info")
 
         def _read_channel(channel):
             try:
@@ -421,10 +420,76 @@ class OSChecker:
 
         results = []
 
+        def _normalize_addr(addr):
+            if addr.startswith("0000:"):
+                return addr
+            return f"0000:{addr}"
+
+        def _parse_verbose(output):
+            blocks = {}
+            current_addr = ""
+            current_lines = []
+            for line in output.splitlines():
+                if line and not line.startswith("\t") and not line.startswith(" "):
+                    if current_addr:
+                        blocks[current_addr] = "\n".join(current_lines).strip()
+                    current_lines = [line]
+                    current_addr = line.split()[0]
+                else:
+                    if current_lines is not None:
+                        current_lines.append(line)
+            if current_addr:
+                blocks[current_addr] = "\n".join(current_lines).strip()
+            return blocks
+
+        def _parse_sysfs_index(output):
+            index = {}
+            current_addr = ""
+            for line in output.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("DEVICE "):
+                    current_addr = line.split("DEVICE ", 1)[1].strip()
+                    index.setdefault(current_addr, {})
+                    continue
+                if not current_addr or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip()
+                if key == "iface":
+                    if "iface" not in index[current_addr]:
+                        index[current_addr]["iface"] = val
+                else:
+                    index[current_addr][key] = val
+            return index
+
         def _run_pci(active_conn):
             output = _run_cmd(active_conn, "lspci -nn")
             if not output:
                 return
+
+            sysfs_script = (
+                "for d in /sys/bus/pci/devices/*; do "
+                "addr=$(basename \"$d\"); "
+                "echo \"DEVICE $addr\"; "
+                "for f in vendor device subsystem_vendor subsystem_device class revision; do "
+                "if [ -f \"$d/$f\" ]; then echo \"$f=$(cat \"$d/$f\")\"; fi; "
+                "done; "
+                "if [ -d \"$d/net\" ]; then "
+                "for n in \"$d\"/net/*; do [ -e \"$n\" ] && echo \"iface=$(basename \"$n\")\"; done; "
+                "fi; "
+                "done"
+            )
+            sysfs_index = _parse_sysfs_index(_run_cmd(active_conn, sysfs_script))
+
+            sudo_cmd = (
+                "echo '" + self.os_password.replace("'", "'\\''") + "' | "
+                "sudo -S -p '' lspci -vvv -nn"
+            )
+            verbose_output = _run_cmd(active_conn, sudo_cmd)
+            verbose_blocks = _parse_verbose(verbose_output) if verbose_output else {}
 
             for line in output.splitlines():
                 line = line.strip()
@@ -433,27 +498,22 @@ class OSChecker:
                 parts = line.split(" ", 1)
                 address = parts[0]
                 summary = parts[1] if len(parts) > 1 else ""
-                full_addr = address
-                if not address.startswith("0000:"):
-                    full_addr = f"0000:{address}"
+                full_addr = _normalize_addr(address)
 
                 device_info = {}
-                for key, path in {
-                    "vendor": "vendor",
-                    "device": "device",
-                    "subsystem_vendor": "subsystem_vendor",
-                    "subsystem_device": "subsystem_device",
-                    "class": "class",
-                    "revision": "revision",
-                }.items():
-                    value = _run_cmd(active_conn, f"cat /sys/bus/pci/devices/{full_addr}/{path} 2>/dev/null")
-                    if value:
-                        device_info[key] = value.strip()
+                sysfs = sysfs_index.get(full_addr, {})
+                for key in [
+                    "vendor",
+                    "device",
+                    "subsystem_vendor",
+                    "subsystem_device",
+                    "class",
+                    "revision",
+                ]:
+                    if key in sysfs:
+                        device_info[key] = sysfs[key]
 
-                iface = ""
-                iface_list = _run_cmd(active_conn, f"ls -1 /sys/bus/pci/devices/{full_addr}/net 2>/dev/null")
-                if iface_list:
-                    iface = iface_list.splitlines()[0].strip()
+                iface = sysfs.get("iface", "")
 
                 speed = ""
                 driver = ""
@@ -478,18 +538,16 @@ class OSChecker:
                         if prop.startswith("ID_VENDOR="):
                             vendor_name = prop.split("=", 1)[1].strip()
 
-                sudo_cmd = (
-                    "echo '" + self.os_password.replace("'", "'\\''") + "' | "
-                    f"sudo -S -p '' lspci -vvv -s {address}"
-                )
-                details = _run_cmd(active_conn, sudo_cmd)
+                details = ""
                 lnkcap = ""
                 lnksta = ""
-                for detail_line in details.splitlines():
-                    if "LnkCap:" in detail_line:
-                        lnkcap = detail_line.split("LnkCap:", 1)[1].strip()
-                    if "LnkSta:" in detail_line:
-                        lnksta = detail_line.split("LnkSta:", 1)[1].strip()
+                if verbose_blocks:
+                    details = verbose_blocks.get(full_addr) or verbose_blocks.get(address) or ""
+                    for detail_line in details.splitlines():
+                        if "LnkCap:" in detail_line:
+                            lnkcap = detail_line.split("LnkCap:", 1)[1].strip()
+                        if "LnkSta:" in detail_line:
+                            lnksta = detail_line.split("LnkSta:", 1)[1].strip()
 
                 results.append({
                     "address": address,
