@@ -334,37 +334,57 @@ if __name__ == "__main__":
                 summary = dev.get("summary", "")
                 iface = dev.get("iface", "")
                 speed = dev.get("speed", "")
+                duplex = dev.get("duplex", "")
                 driver = dev.get("driver", "")
                 firmware = dev.get("firmware", "")
                 serial = dev.get("serial", "")
                 part_number = dev.get("part_number", "")
+                product_name = dev.get("product_name", "")
+                vendor_specific = dev.get("vendor_specific", "")
+                kernel_driver = dev.get("kernel_driver", "")
+                kernel_modules = dev.get("kernel_modules", "")
+                numa_node = dev.get("numa_node", "")
+                iommu_group = dev.get("iommu_group", "")
+                ip_address = dev.get("ip_address", "")
+                mac = dev.get("mac", "")
                 vendor = dev.get("vendor", "")
                 lnkcap = dev.get("lnkcap", "")
                 lnksta = dev.get("lnksta", "")
                 print(f"{address} {summary}")
+                if product_name:
+                    print(f"  Product Name: {product_name}")
+                if part_number:
+                    print(f"  Part number: {part_number}")
+                if serial:
+                    print(f"  Serial number: {serial}")
+                if firmware:
+                    print(f"  Firmware Version: {firmware}")
+                if vendor_specific:
+                    print(f"  Vendor specific: {vendor_specific}")
+                if kernel_driver or driver:
+                    print(f"  Kernel driver in use: {kernel_driver or driver}")
+                if kernel_modules:
+                    print(f"  Kernel modules: {kernel_modules}")
+                if numa_node:
+                    print(f"  NUMA node: {numa_node}")
+                if iommu_group:
+                    print(f"  IOMMU group: {iommu_group}")
                 if iface:
                     print(f"  Interface: {iface}")
+                if ip_address:
+                    print(f"  IP Address: {ip_address}")
+                if mac:
+                    print(f"  MAC: {mac}")
                 if speed:
                     print(f"  Speed: {speed} Mb/s")
-                if driver:
-                    print(f"  Driver: {driver}")
-                if firmware:
-                    print(f"  Firmware: {firmware}")
-                if vendor:
-                    print(f"  Vendor: {vendor}")
-                if part_number:
-                    print(f"  Part Number: {part_number}")
-                if serial:
-                    print(f"  Serial: {serial}")
-                if lnkcap:
-                    print(f"  LnkCap: {lnkcap}")
-                if lnksta:
-                    print(f"  LnkSta: {lnksta}")
-                details = dev.get("details", "")
-                if details:
-                    print("  Details:")
-                    for line in details.splitlines():
-                        print(f"    {line}")
+                if duplex:
+                    print(f"  Duplex: {duplex}")
+                if lnkcap or lnksta:
+                    print("  Capabilities:")
+                    if lnkcap:
+                        print(f"    LnkCap: {lnkcap}")
+                    if lnksta:
+                        print(f"    LnkSta: {lnksta}")
         else:
             print("No matching PCI devices found.")
     else:

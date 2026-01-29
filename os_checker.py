@@ -8,11 +8,11 @@ except Exception:
 
 
 class OSChecker:
-    def __init__(self, bmc_hostname=None, **kwargs):
-        self.bmc_hostname = bmc_hostname
+    def __init__(self, **kwargs):
+        self.bmc_hostname = kwargs.get('bmc_hostname', None)
         self.bmc_username = 'root'
         self.bmc_password = '0penBmc'
-        self.os_hostname = 'spg-' + bmc_hostname if bmc_hostname else ''
+        self.os_hostname = 'spg-' + self.bmc_hostname if self.bmc_hostname else ''
         self.os_username = 'amd'
         self.os_password = 'amd123'
     @contextmanager
@@ -442,6 +442,65 @@ class OSChecker:
                 blocks[current_addr] = "\n".join(current_lines).strip()
             return blocks
 
+        def _parse_lspci_verbose(text):
+            data = {
+                "product_name": "",
+                "part_number": "",
+                "serial": "",
+                "vendor_specific": "",
+                "kernel_driver": "",
+                "kernel_modules": "",
+                "numa_node": "",
+                "iommu_group": "",
+                "lnkcap": "",
+                "lnksta": "",
+            }
+            vendor_specifics = []
+            for raw_line in text.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("Product Name:"):
+                    data["product_name"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("Part number:"):
+                    data["part_number"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("Serial number:"):
+                    data["serial"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("Vendor specific:"):
+                    vendor_specifics.append(line.split(":", 1)[1].strip())
+                    continue
+                if line.startswith("Kernel driver in use:"):
+                    data["kernel_driver"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("Kernel modules:"):
+                    data["kernel_modules"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("NUMA node:"):
+                    data["numa_node"] = line.split(":", 1)[1].strip()
+                    continue
+                if line.startswith("IOMMU group:"):
+                    data["iommu_group"] = line.split(":", 1)[1].strip()
+                    continue
+                if "LnkCap:" in line:
+                    data["lnkcap"] = line.split("LnkCap:", 1)[1].strip()
+                    continue
+                if "LnkSta:" in line:
+                    data["lnksta"] = line.split("LnkSta:", 1)[1].strip()
+                    continue
+
+            vendor_specific = ""
+            for value in vendor_specifics:
+                if "PCIe" in value or "PCI" in value:
+                    vendor_specific = value
+                    break
+            if not vendor_specific and vendor_specifics:
+                vendor_specific = vendor_specifics[0]
+            data["vendor_specific"] = vendor_specific
+            return data
+
         def _parse_sysfs_index(output):
             index = {}
             current_addr = ""
@@ -466,7 +525,7 @@ class OSChecker:
             return index
 
         def _run_pci(active_conn):
-            output = _run_cmd(active_conn, "lspci -nn")
+            output = _run_cmd(active_conn, "lspci -D -nn")
             if not output:
                 return
 
@@ -484,11 +543,7 @@ class OSChecker:
             )
             sysfs_index = _parse_sysfs_index(_run_cmd(active_conn, sysfs_script))
 
-            sudo_cmd = (
-                "echo '" + self.os_password.replace("'", "'\\''") + "' | "
-                "sudo -S -p '' lspci -vvv -nn"
-            )
-            verbose_output = _run_cmd(active_conn, sudo_cmd)
+            verbose_output = _run_cmd(active_conn, "lspci -vv -nn")
             verbose_blocks = _parse_verbose(verbose_output) if verbose_output else {}
 
             for line in output.splitlines():
@@ -516,13 +571,18 @@ class OSChecker:
                 iface = sysfs.get("iface", "")
 
                 speed = ""
+                duplex = ""
                 driver = ""
                 firmware = ""
-                serial = ""
-                part_number = ""
+                ip_address = ""
+                mac_address = ""
                 vendor_name = ""
                 if iface:
                     speed = _run_cmd(active_conn, f"cat /sys/class/net/{iface}/speed 2>/dev/null")
+                    ethtool_link = _run_cmd(active_conn, f"ethtool {iface} 2>/dev/null")
+                    for link_line in ethtool_link.splitlines():
+                        if link_line.strip().startswith("Duplex:"):
+                            duplex = link_line.split(":", 1)[1].strip()
                     ethtool_info = _run_cmd(active_conn, f"ethtool -i {iface} 2>/dev/null")
                     for info_line in ethtool_info.splitlines():
                         if info_line.startswith("driver:"):
@@ -531,23 +591,43 @@ class OSChecker:
                             firmware = info_line.split(":", 1)[1].strip()
                     udev_props = _run_cmd(active_conn, f"udevadm info -q property -p /sys/class/net/{iface} 2>/dev/null")
                     for prop in udev_props.splitlines():
-                        if prop.startswith("ID_SERIAL="):
-                            serial = prop.split("=", 1)[1].strip()
-                        if prop.startswith("ID_MODEL="):
-                            part_number = prop.split("=", 1)[1].strip()
                         if prop.startswith("ID_VENDOR="):
                             vendor_name = prop.split("=", 1)[1].strip()
+                    ip_out = _run_cmd(
+                        active_conn,
+                        f"ip -o -4 addr show dev {iface} 2>/dev/null | awk '{{print $4}}'"
+                    )
+                    if ip_out:
+                        ip_address = ip_out.split()[0].split("/", 1)[0]
+                    mac_address = _run_cmd(active_conn, f"cat /sys/class/net/{iface}/address 2>/dev/null")
 
                 details = ""
                 lnkcap = ""
                 lnksta = ""
+                product_name = ""
+                part_number = ""
+                serial = ""
+                vendor_specific = ""
+                kernel_driver = ""
+                kernel_modules = ""
+                numa_node = ""
+                iommu_group = ""
                 if verbose_blocks:
                     details = verbose_blocks.get(full_addr) or verbose_blocks.get(address) or ""
-                    for detail_line in details.splitlines():
-                        if "LnkCap:" in detail_line:
-                            lnkcap = detail_line.split("LnkCap:", 1)[1].strip()
-                        if "LnkSta:" in detail_line:
-                            lnksta = detail_line.split("LnkSta:", 1)[1].strip()
+                    parsed_verbose = _parse_lspci_verbose(details) if details else {}
+                    product_name = parsed_verbose.get("product_name", "")
+                    part_number = parsed_verbose.get("part_number", "")
+                    serial = parsed_verbose.get("serial", "")
+                    vendor_specific = parsed_verbose.get("vendor_specific", "")
+                    kernel_driver = parsed_verbose.get("kernel_driver", "")
+                    kernel_modules = parsed_verbose.get("kernel_modules", "")
+                    numa_node = parsed_verbose.get("numa_node", "")
+                    iommu_group = parsed_verbose.get("iommu_group", "")
+                    lnkcap = parsed_verbose.get("lnkcap", "")
+                    lnksta = parsed_verbose.get("lnksta", "")
+
+                if kernel_driver and not driver:
+                    driver = kernel_driver
 
                 results.append({
                     "address": address,
@@ -555,10 +635,19 @@ class OSChecker:
                     "details": details,
                     "iface": iface,
                     "speed": speed,
+                    "duplex": duplex,
                     "driver": driver,
                     "firmware": firmware,
                     "serial": serial,
                     "part_number": part_number,
+                    "product_name": product_name,
+                    "vendor_specific": vendor_specific,
+                    "kernel_driver": kernel_driver,
+                    "kernel_modules": kernel_modules,
+                    "numa_node": numa_node,
+                    "iommu_group": iommu_group,
+                    "ip_address": ip_address,
+                    "mac": mac_address,
                     "vendor": vendor_name,
                     "lnkcap": lnkcap,
                     "lnksta": lnksta,
