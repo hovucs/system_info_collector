@@ -503,29 +503,6 @@ class OSChecker:
             data["vendor_specific"] = vendor_specific
             return data
 
-        def _parse_sysfs_index(output):
-            index = {}
-            current_addr = ""
-            for line in output.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                if line.startswith("DEVICE "):
-                    current_addr = line.split("DEVICE ", 1)[1].strip()
-                    index.setdefault(current_addr, {})
-                    continue
-                if not current_addr or "=" not in line:
-                    continue
-                key, val = line.split("=", 1)
-                key = key.strip()
-                val = val.strip()
-                if key == "iface":
-                    if "iface" not in index[current_addr]:
-                        index[current_addr]["iface"] = val
-                else:
-                    index[current_addr][key] = val
-            return index
-
         def _run_pci(active_conn):
             sudo_prefix = (
                 "echo '" + self.os_password.replace("'", "'\\''") + "' | "
@@ -535,21 +512,7 @@ class OSChecker:
             if not output:
                 return
 
-            sysfs_script = (
-                "for d in /sys/bus/pci/devices/*; do "
-                "addr=$(basename \"$d\"); "
-                "echo \"DEVICE $addr\"; "
-                "for f in vendor device subsystem_vendor subsystem_device class revision; do "
-                "if [ -f \"$d/$f\" ]; then echo \"$f=$(cat \"$d/$f\")\"; fi; "
-                "done; "
-                "if [ -d \"$d/net\" ]; then "
-                "for n in \"$d\"/net/*; do [ -e \"$n\" ] && echo \"iface=$(basename \"$n\")\"; done; "
-                "fi; "
-                "done"
-            )
-            sysfs_index = _parse_sysfs_index(_run_cmd(active_conn, sysfs_script))
-
-            verbose_output = _run_cmd(active_conn, f"{sudo_prefix}lspci -vv -nn")
+            verbose_output = _run_cmd(active_conn, f"{sudo_prefix}lspci -vvv -nn")
             verbose_blocks = _parse_verbose(verbose_output) if verbose_output else {}
 
             for line in output.splitlines():
@@ -561,20 +524,10 @@ class OSChecker:
                 summary = parts[1] if len(parts) > 1 else ""
                 full_addr = _normalize_addr(address)
 
-                device_info = {}
-                sysfs = sysfs_index.get(full_addr, {})
-                for key in [
-                    "vendor",
-                    "device",
-                    "subsystem_vendor",
-                    "subsystem_device",
-                    "class",
-                    "revision",
-                ]:
-                    if key in sysfs:
-                        device_info[key] = sysfs[key]
-
-                iface = sysfs.get("iface", "")
+                iface = _run_cmd(
+                    active_conn,
+                    f"ls /sys/bus/pci/devices/{full_addr}/net 2>/dev/null | head -n 1"
+                )
 
                 speed = ""
                 duplex = ""
@@ -582,7 +535,6 @@ class OSChecker:
                 firmware = ""
                 ip_address = ""
                 mac_address = ""
-                vendor_name = ""
                 if iface:
                     speed = _run_cmd(active_conn, f"cat /sys/class/net/{iface}/speed 2>/dev/null")
                     ethtool_link = _run_cmd(active_conn, f"ethtool {iface} 2>/dev/null")
@@ -595,10 +547,6 @@ class OSChecker:
                             driver = info_line.split(":", 1)[1].strip()
                         if info_line.startswith("firmware-version:"):
                             firmware = info_line.split(":", 1)[1].strip()
-                    udev_props = _run_cmd(active_conn, f"udevadm info -q property -p /sys/class/net/{iface} 2>/dev/null")
-                    for prop in udev_props.splitlines():
-                        if prop.startswith("ID_VENDOR="):
-                            vendor_name = prop.split("=", 1)[1].strip()
                     ip_out = _run_cmd(
                         active_conn,
                         f"ip -o -4 addr show dev {iface} 2>/dev/null | awk '{{print $4}}'"
@@ -633,7 +581,7 @@ class OSChecker:
                     lnksta = parsed_verbose.get("lnksta", "")
 
                 if not details:
-                    detail_out = _run_cmd(active_conn, f"{sudo_prefix}lspci -vv -s {address}")
+                    detail_out = _run_cmd(active_conn, f"{sudo_prefix}lspci -vvv -s {address}")
                     if detail_out:
                         details = detail_out
                         parsed_verbose = _parse_lspci_verbose(detail_out)
@@ -670,10 +618,8 @@ class OSChecker:
                     "iommu_group": iommu_group,
                     "ip_address": ip_address,
                     "mac": mac_address,
-                    "vendor": vendor_name,
                     "lnkcap": lnkcap,
                     "lnksta": lnksta,
-                    "sysfs": device_info,
                 })
 
         if conn is None:
