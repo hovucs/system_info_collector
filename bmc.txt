@@ -1,0 +1,75 @@
+ipmitool fru print
+FRU Device Description : Builtin FRU Device (ID 0)
+FRU Device Description : system (ID 1)
+ Chassis Type          : Unspecified
+ Chassis Serial        : CONGO-031098-0571
+ Chassis Area Checksum : OK
+ Board Mfg Date        : Fri Apr  4 12:16:00 2025 UTC
+ Board Mfg             : AMD
+ Board Product         : Congo
+ Board Serial          : 030462-022425F-00051
+ Board Part Number     : 102-H73001-00A
+ Board Area Checksum   : OK
+
+
+ root@congo-0571:~# fw_printenv
+baudrate=115200
+board_conf=#conf-aspeed-bmc-amd-congo.dtb
+board_id=86
+board_rev=01
+boot_device=spi
+boota=setenv bootpart 2; setenv rootfs rofs-a; run setmmcargs; ext4load mmc 0:${bootpart} ${loadaddr} fitImage && bootm ${loadaddr}${board_conf}; echo Error loading kernel FIT image
+bootargs=console=ttyS12,115200n8 root=/dev/ram rw earlycon systemd.hostname=congo-0571
+bootb=setenv bootpart 3; setenv rootfs rofs-b; run setmmcargs; ext4load mmc 0:${bootpart} ${loadaddr} fitImage && bootm ${loadaddr}${board_conf}; echo Error loading kernel FIT image
+bootcmd=echo Boot from ${boot_device}; if test ${boot_device} = mmc; then run bootmmc; fi; if test ${boot_device} = spi; then run bootspi; fi;
+bootdelay=2
+bootmmc=if test "${bootside}" = "b"; then run bootb; run boota; else run boota; run bootb; fi
+bootside=a
+bootspi=fdt addr ${fdtspiaddr} && fdt header get fitsize totalsize && cp.b ${fdtspiaddr} ${loadaddr} ${fitsize} && bootm ${loadaddr}${board_conf}; echo Error loading kernel FIT image
+dtname=congo
+eth1addr=00:00:1a:20:9a:c2
+ethaddr=00:00:1a:20:9a:c1
+fdtcontroladdr=479e8cdc0
+fdtspiaddr=100420000
+loadaddr=0x403000000
+por_rst=true
+rootfs=rofs
+setmmcargs=setenv bootargs ${bootargs} rootwait root=PARTLABEL=${rootfs}
+soc_id=AST2700-A1
+stderr=serial@14c33b00
+stdin=serial@14c33b00
+stdout=serial@14c33b00
+verify=yes
+root@congo-0571:~#
+
+
+
+root@congo-0571:~# cat /etc/os-release
+ID=openbmc-phosphor
+NAME="Phosphor OpenBMC (Phosphor OpenBMC Project Reference Distro)"
+VERSION="sp7_v2.16.0.062D"
+VERSION_ID=sp7_v2.16.0.062d
+VERSION_CODENAME="scarthgap"
+PRETTY_NAME="Phosphor OpenBMC (Phosphor OpenBMC Project Reference Distro) sp7_v2.16.0.062D"
+CPE_NAME="cpe:/o:openembedded:openbmc-phosphor:sp7_v2.16.0.062D"
+BUILD_ID="20250915232739"
+OPENBMC_TARGET_MACHINE="sp7"
+EXTENDED_VERSION="sp7_v2.16.0.062D"
+
+
+root@congo-0571:~# cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-118/hwmon/**/temp1_input
+
+
+
+root@morocco-0505:~# cat  /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input
+cat: can't open '/sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input': No such file or directory
+
+
+CPU 1: cat  /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input
+
+DIMM1: cat  /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1001118/hwmon/**/temp*_input
+
+
+CPU 0: cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-118/hwmon/**/temp1_input
+
+DIMM 0: cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-1118/hwmon/**/temp*_input
