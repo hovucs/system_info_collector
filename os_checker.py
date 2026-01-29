@@ -460,6 +460,8 @@ class OSChecker:
                 line = raw_line.strip()
                 if not line:
                     continue
+                if line.startswith("[") and "]" in line:
+                    line = line.split("]", 1)[1].strip()
                 if line.startswith("Product Name:"):
                     data["product_name"] = line.split(":", 1)[1].strip()
                     continue
@@ -525,7 +527,11 @@ class OSChecker:
             return index
 
         def _run_pci(active_conn):
-            output = _run_cmd(active_conn, "lspci -D -nn")
+            sudo_prefix = (
+                "echo '" + self.os_password.replace("'", "'\\''") + "' | "
+                "sudo -S -p '' "
+            )
+            output = _run_cmd(active_conn, f"{sudo_prefix}lspci -D -nn")
             if not output:
                 return
 
@@ -543,7 +549,7 @@ class OSChecker:
             )
             sysfs_index = _parse_sysfs_index(_run_cmd(active_conn, sysfs_script))
 
-            verbose_output = _run_cmd(active_conn, "lspci -vv -nn")
+            verbose_output = _run_cmd(active_conn, f"{sudo_prefix}lspci -vv -nn")
             verbose_blocks = _parse_verbose(verbose_output) if verbose_output else {}
 
             for line in output.splitlines():
@@ -625,6 +631,22 @@ class OSChecker:
                     iommu_group = parsed_verbose.get("iommu_group", "")
                     lnkcap = parsed_verbose.get("lnkcap", "")
                     lnksta = parsed_verbose.get("lnksta", "")
+
+                if not details:
+                    detail_out = _run_cmd(active_conn, f"{sudo_prefix}lspci -vv -s {address}")
+                    if detail_out:
+                        details = detail_out
+                        parsed_verbose = _parse_lspci_verbose(detail_out)
+                        product_name = product_name or parsed_verbose.get("product_name", "")
+                        part_number = part_number or parsed_verbose.get("part_number", "")
+                        serial = serial or parsed_verbose.get("serial", "")
+                        vendor_specific = vendor_specific or parsed_verbose.get("vendor_specific", "")
+                        kernel_driver = kernel_driver or parsed_verbose.get("kernel_driver", "")
+                        kernel_modules = kernel_modules or parsed_verbose.get("kernel_modules", "")
+                        numa_node = numa_node or parsed_verbose.get("numa_node", "")
+                        iommu_group = iommu_group or parsed_verbose.get("iommu_group", "")
+                        lnkcap = lnkcap or parsed_verbose.get("lnkcap", "")
+                        lnksta = lnksta or parsed_verbose.get("lnksta", "")
 
                 if kernel_driver and not driver:
                     driver = kernel_driver
