@@ -4,6 +4,8 @@ import subprocess
 import sys
 
 from os_checker import OSChecker
+from redfish_checker import RedfishCollector
+from bmc_checker import BMCChecker
 
 
 def tool_check():
@@ -16,6 +18,7 @@ def tool_check():
 
     try:
         import paramiko
+        import requests
     except Exception:
         if not in_venv:
             if not os.path.exists(venv_python):
@@ -30,13 +33,13 @@ def tool_check():
                 stderr=stderr_target,
             )
             subprocess.check_call(
-                [venv_python, "-m", "pip", "install", "paramiko"],
+                [venv_python, "-m", "pip", "install", "paramiko", "requests"],
                 stdout=stdout_target,
                 stderr=stderr_target,
             )
             os.execv(venv_python, [venv_python] + sys.argv)
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "paramiko"],
+            [sys.executable, "-m", "pip", "install", "paramiko", "requests"],
             stdout=stdout_target,
             stderr=stderr_target,
         )
@@ -53,6 +56,33 @@ def kb_to_gb_tb_convertor(value):
             return ""
 
 
+def collect_redfish_data(bmc_host, username, password, verify):
+    base_urls = []
+    if bmc_host.startswith("http://") or bmc_host.startswith("https://"):
+        base_urls.append(bmc_host)
+    else:
+        base_urls.append(f"https://{bmc_host}")
+        base_urls.append(f"http://{bmc_host}")
+
+    for base_url in base_urls:
+        try:
+            collector = RedfishCollector(
+                base_url=base_url,
+                username=username,
+                password=password,
+                verify=verify,
+            )
+            collector.login()
+            data = collector.collect_firmware_and_hardware()
+            collector.logout()
+            if data:
+                data["base_url"] = base_url
+                return data
+        except Exception:
+            continue
+    return {}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="System Info Collector")
     parser.add_argument("--bmc_host", required=True, help="BMC hostname")
@@ -66,6 +96,7 @@ if __name__ == "__main__":
     tool_check()
 
     os_checker = OSChecker(bmc_hostname=args.bmc_host)
+    bmc_checker = BMCChecker(bmc_hostname=args.bmc_host)
 
     if args.os_host:
         os_checker.os_hostname = args.os_host
@@ -74,9 +105,11 @@ if __name__ == "__main__":
     
     if args.bmc_usr:
         os_checker.bmc_username = args.bmc_usr
+        bmc_checker.bmc_username = args.bmc_usr
     
     if args.bmc_pwd:
         os_checker.bmc_password = args.bmc_pwd
+        bmc_checker.bmc_password = args.bmc_pwd
    
     if args.os_usr:
         os_checker.os_username = args.os_usr
@@ -99,6 +132,19 @@ if __name__ == "__main__":
         print(f"Failed to collect OS info: {exc}")
         raise SystemExit(1)
 
+    bmc_data = {}
+    try:
+        bmc_data = bmc_checker.check_bmc()
+    except Exception as exc:
+        print(f"Failed to collect BMC info: {exc}")
+
+    redfish_data = collect_redfish_data(
+        args.bmc_host,
+        args.bmc_usr,
+        args.bmc_pwd,
+        verify=False,
+    )
+
     print("SYSTEM: "+ args.bmc_host.upper())
 
 
@@ -115,9 +161,45 @@ if __name__ == "__main__":
     print("KERNEL: "+ info["Kernel"])
     print("CMDLINE: "+ info["cmdline"])
     print("IP ADDRESS: "+ info["ip"])
-    print("BIOS: "+ info["BIOS"])
+    if redfish_data:
+        firmware = redfish_data.get("firmware", {})
+        if firmware:
+            print("\nFIRMWARE:")
+            for key, value in firmware.items():
+                if isinstance(value, dict):
+                    print(f"- {key}:")
+                    for sub_key, sub_val in value.items():
+                        print(f"  {sub_key}: {sub_val}")
+                else:
+                    print(f"- {key}: {value}")
 
-
+    if bmc_data:
+        summary = bmc_data.get("summary", {})
+        ordered_keys = [
+            "Chassis Type",
+            "Chassis Serial",
+            "Chassis Area Checksum",
+            "Board Mfg Date",
+            "Board Mfg",
+            "Board Product",
+            "Board Serial",
+            "Board Part Number",
+            "Board Area Checksum",
+            "board_id",
+            "board_rev",
+            "CPU 0 Temp",
+            "CPU 1 Temp",
+            "DIMM 0 Temp",
+            "DIMM 1 Temp",
+        ]
+        for key in ordered_keys:
+            value = summary.get(key, "")
+            if value == "" or value == []:
+                continue
+            if isinstance(value, list):
+                print(f"{key}: {', '.join(str(v) for v in value)}")
+            else:
+                print(f"{key}: {value}")
     print("\n=============================")
     print("|       CPU INFORMATION      |")
     print("=============================")
@@ -163,7 +245,6 @@ if __name__ == "__main__":
     print("|      MEMORY INFORMATION    |")
     print("=============================")
     
-
     total_gb = kb_to_gb_tb_convertor(memory["Total"])
     avail_gb = kb_to_gb_tb_convertor(memory["Available"])
     used_gb = kb_to_gb_tb_convertor(memory["Used"])
@@ -310,7 +391,29 @@ if __name__ == "__main__":
                 print(f"  Used: {used_text}")
             if avail_text:
                 print(f"  Available: {avail_text}")
-
+    else:
+        if redfish_data:
+            drives = redfish_data.get("drives", [])
+            if drives:
+                print("\nDRIVES:")
+                for drive in drives:
+                    model = drive.get("Model", "")
+                    serial = drive.get("SerialNumber", "")
+                    firmware = drive.get("Firmware", "")
+                    manufacturer = drive.get("Manufacturer", "")
+                    media_type = drive.get("MediaType", "")
+                    label = model or serial or "Drive"
+                    print(f"- {label}")
+                    if model:
+                        print(f"  Model: {model}")
+                    if serial:
+                        print(f"  Serial: {serial}")
+                    if manufacturer:
+                        print(f"  Manufacturer: {manufacturer}")
+                    if media_type:
+                        print(f"  Media Type: {media_type}")
+                    if firmware:
+                        print(f"  Firmware: {firmware}")
 
     print("\n=============================")
     print("|       PCI DEVICES          |")
@@ -390,3 +493,30 @@ if __name__ == "__main__":
     else:
         print("No PCI devices found.")
             
+
+    print("\n=============================")
+    print("|     THERMAL INFORMATION     |")
+    print("=============================")
+    if not redfish_data:
+        print("No Redfish data collected.")
+    else:
+        thermal = redfish_data.get("thermal", {})
+
+        if thermal:
+            print("\nTHERMAL:")
+            fans = thermal.get("Fans", [])
+            temps = thermal.get("Temperatures", [])
+            if fans:
+                print(" Fans:")
+                for fan in fans:
+                    name = fan.get("Name", "")
+                    reading = fan.get("Reading", "")
+                    units = fan.get("ReadingUnits", "RPM")
+                    print(f"  - {name}: {reading} {units}")
+            if temps:
+                print(" Temperatures:")
+                for temp in temps:
+                    name = temp.get("Name", "")
+                    reading = temp.get("ReadingCelsius", "")
+                    print(f"  - {name}: {reading} C")
+  

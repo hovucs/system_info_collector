@@ -44,32 +44,15 @@ root@congo-0571:~#
 
 
 
-root@congo-0571:~# cat /etc/os-release
-ID=openbmc-phosphor
-NAME="Phosphor OpenBMC (Phosphor OpenBMC Project Reference Distro)"
-VERSION="sp7_v2.16.0.062D"
-VERSION_ID=sp7_v2.16.0.062d
-VERSION_CODENAME="scarthgap"
-PRETTY_NAME="Phosphor OpenBMC (Phosphor OpenBMC Project Reference Distro) sp7_v2.16.0.062D"
-CPE_NAME="cpe:/o:openembedded:openbmc-phosphor:sp7_v2.16.0.062D"
-BUILD_ID="20250915232739"
-OPENBMC_TARGET_MACHINE="sp7"
-EXTENDED_VERSION="sp7_v2.16.0.062D"
-
-
-root@congo-0571:~# cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-118/hwmon/**/temp1_input
-
-
-
 root@morocco-0505:~# cat  /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input
 cat: can't open '/sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input': No such file or directory
 
 
-CPU 1: cat  /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input
+CPU 1 Temp: cat  /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input
 
-DIMM1: cat  /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1001118/hwmon/**/temp*_input
+DIMM1 Temp: cat  /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1001118/hwmon/**/temp*_input (16 DIMMs in total)
 
 
-CPU 0: cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-118/hwmon/**/temp1_input
+CPU 0 Temp: cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-118/hwmon/**/temp1_input
 
-DIMM 0: cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-1118/hwmon/**/temp*_input
+DIMM 0 Temp: cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-1118/hwmon/**/temp*_input (16 DIMMs in total)
