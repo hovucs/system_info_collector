@@ -23,7 +23,7 @@ import urllib3
 
 class RedfishCollector:
     def __init__(self, base_url: str, username: Optional[str] = None, password: Optional[str] = None,
-                 verify: bool = True, use_session: bool = True, timeout: int = 30):
+                 verify: bool = True, use_session: bool = True, timeout: int = 10):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
@@ -31,6 +31,8 @@ class RedfishCollector:
         self.timeout = timeout
         self.session = requests.Session()
         self.session.verify = verify
+        if not verify:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self.headers: Dict[str, str] = {"Accept": "application/json"}
         self.session_location: Optional[str] = None
         self.use_session = use_session

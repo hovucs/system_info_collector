@@ -82,10 +82,20 @@ class BMCChecker:
         self._require_bmc()
 
         temp_cmds = {
-            "cpu0": "cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-118/hwmon/**/temp1_input",
-            "dimm0": "cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-1118/hwmon/**/temp*_input",
-            "cpu1": "cat /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input",
-            "dimm1": "cat /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1001118/hwmon/**/temp*_input",
+            "cpu0": [
+                "cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-118/hwmon/**/temp1_input",
+                "cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-22400000119/hwmon/**/temp1_input",
+            ],
+            "dimm0": [
+                "cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-1118/hwmon/**/temp*_input",
+                "cat /sys/devices/platform/soc@14000000/14c24000.i3c4/14c24000.i3c4/4-22400001119/hwmon/**/temp*_input",
+            ],
+            "cpu1": [
+                "cat /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1000118/hwmon/**/temp1_input",
+            ],
+            "dimm1": [
+                "cat /sys/devices/platform/soc@14000000/14c25000.i3c5/14c25000.i3c5/5-1001118/hwmon/**/temp*_input",
+            ],
         }
 
         def _parse_values(text):
@@ -103,12 +113,14 @@ class BMCChecker:
             self.bmc_username,
             self.bmc_password,
         ) as conn:
-            for key, cmd in temp_cmds.items():
-                out, err = self._run_command(conn, cmd, use_shell=True)
-                if not out and err and "No such file or directory" in err:
-                    continue
-                if out:
-                    results[key] = _parse_values(out)
+            for key, cmds in temp_cmds.items():
+                for cmd in cmds:
+                    out, err = self._run_command(conn, cmd, use_shell=True)
+                    if not out and err and "No such file or directory" in err:
+                        continue
+                    if out:
+                        results[key] = _parse_values(out)
+                        break
 
         return results
 
